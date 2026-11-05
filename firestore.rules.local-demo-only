@@ -1,0 +1,5 @@
+// OPTIONAL: use only for local emulator smoke tests, NEVER deploy this file.
+// Temporarily add this match before the final deny-all rule in firestore.rules:
+// match /smokeTests/{uid} {
+//   allow read, write: if request.auth != null && request.auth.uid == uid;
+// }

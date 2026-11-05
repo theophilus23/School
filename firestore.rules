@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function hasProfile() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function role() {
+      return hasProfile() ? userDoc().role : '';
+    }
+    function schoolId() {
+      return hasProfile() ? userDoc().schoolId : '';
+    }
+    function sameSchool(sid) {
+      return hasProfile() && schoolId() == sid;
+    }
+    function isAdmin(sid) {
+      return sameSchool(sid) && role() == 'admin';
+    }
+    function isTeacher(sid) {
+      return sameSchool(sid) && role() == 'teacher';
+    }
+    function isStudent(sid) {
+      return sameSchool(sid) && role() == 'student';
+    }
+    function isParent(sid) {
+      return sameSchool(sid) && role() == 'parent';
+    }
+
+    // Users can read their own profile. Admins can read profiles in their school.
+    // Clients cannot create/change roles or school membership themselves.
+    match /users/{uid} {
+      allow read: if signedIn() &&
+        (request.auth.uid == uid ||
+         (hasProfile() && userDoc().role == 'admin' &&
+          userDoc().schoolId == resource.data.schoolId));
+      allow create, update, delete: if false;
+    }
+
+    match /schools/{sid} {
+      allow read: if sameSchool(sid);
+      allow create, update, delete: if isAdmin(sid);
+
+      match /academicYears/{docId} {
+        allow read: if sameSchool(sid);
+        allow write: if isAdmin(sid);
+      }
+      match /classes/{docId} {
+        allow read: if sameSchool(sid);
+        allow write: if isAdmin(sid);
+      }
+      match /sections/{docId} {
+        allow read: if sameSchool(sid);
+        allow write: if isAdmin(sid);
+      }
+      match /homework/{docId} {
+        allow read: if sameSchool(sid);
+        allow create, update, delete: if isAdmin(sid) || isTeacher(sid);
+      }
+      match /assignments/{docId} {
+        allow read: if sameSchool(sid);
+        allow create, update, delete: if isAdmin(sid) || isTeacher(sid);
+      }
+      match /exams/{docId} {
+        allow read: if sameSchool(sid);
+        allow create, update, delete: if isAdmin(sid) || isTeacher(sid);
+      }
+      match /messages/{docId} {
+        allow read: if sameSchool(sid);
+        allow create: if sameSchool(sid);
+        allow update, delete: if isAdmin(sid);
+      }
+      match /notifications/{docId} {
+        allow read: if sameSchool(sid);
+        allow create, update, delete: if isAdmin(sid) || isTeacher(sid);
+      }
+      match /parentStudentLinks/{docId} {
+        allow read: if sameSchool(sid);
+        allow write: if isAdmin(sid);
+      }
+    }
+
+    // LOCAL SMOKE TEST ONLY: permits each signed-in test account to write its own
+    // smoke-test document. Remove this match before any real deployment.
+    match /smokeTests/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Deny everything not explicitly allowed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

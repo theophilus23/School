@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SchoolHub Firebase local smoke test</title>
+  <style>
+    body{font:16px/1.5 system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 18px;color:#172033}
+    input,button{font:inherit;padding:10px;margin:4px 0;max-width:100%}
+    input{width:360px;display:block}button{cursor:pointer}
+    pre{background:#f3f5f8;padding:14px;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:8px}
+    .warning{background:#fff5d6;padding:12px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <h1>SchoolHub Firebase smoke test</h1>
+  <p class="warning">Local emulator only. Use a fake test email and password. Do not use real student data.</p>
+  <label>Test email <input id="email" type="email" value="admin-test@example.test"></label>
+  <label>Test password <input id="password" type="password" value="SchoolHub-demo-123!"></label>
+  <button id="run">Create/sign in test account and test Firestore</button>
+  <pre id="log">Start the Firebase emulators first, then run this page through a local HTTP server.</pre>
+  <script type="module">
+    import { auth, db } from "./firebase.js";
+    import {
+      createUserWithEmailAndPassword, signInWithEmailAndPassword
+    } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+    import {
+      doc, setDoc, getDoc, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+    const log = (message) => {
+      document.getElementById("log").textContent += "\n" + message;
+    };
+    document.getElementById("run").addEventListener("click", async () => {
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      document.getElementById("log").textContent = "Running local emulator test…";
+      try {
+        let credential;
+        try {
+          credential = await createUserWithEmailAndPassword(auth, email, password);
+          log("Auth: created local test account.");
+        } catch (e) {
+          if (e.code !== "auth/email-already-in-use") throw e;
+          credential = await signInWithEmailAndPassword(auth, email, password);
+          log("Auth: signed in to existing local test account.");
+        }
+        log("Auth UID: " + credential.user.uid);
+        // A user may only read their own profile until a trusted admin provisions it.
+        // This test writes a separate self-owned test record only after auth succeeds.
+        const testRef = doc(db, "smokeTests", credential.user.uid);
+        await setDoc(testRef, { email, testedAt: serverTimestamp(), environment: "local-emulator" });
+        const snap = await getDoc(testRef);
+        log("Firestore write/read: " + (snap.exists() ? "PASS" : "FAIL"));
+        log("Note: firestore.rules includes a local smokeTests rule for this demo. Remove that rule before production deployment.");
+      } catch (e) {
+        log("ERROR: " + (e.code || e.name) + " — " + e.message);
+        log("Check that Auth and Firestore emulators are running and this page is served from http://127.0.0.1:5500.");
+      }
+    });
+  </script>
+</body>
+</html>
